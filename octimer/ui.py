@@ -310,8 +310,12 @@ class OctimerWindow(Gtk.Window):
 
         self.eventbox = Gtk.EventBox()
         self.eventbox.set_visible_window(False)
-        self.eventbox.connect("button-press-event", self._on_press)
-        self.eventbox.connect("scroll-event", self._on_scroll)
+        # The EventBox shares the toplevel GdkWindow (visible_window=False), so it
+        # is never the event target -- presses and scrolls arrive on the window
+        # itself. Buttons still consume their own clicks first (they own input
+        # windows), so the drag only starts on empty card area.
+        self.connect("button-press-event", self._on_press)
+        self.connect("scroll-event", self._on_scroll)
         self.add(self.eventbox)
 
         self.root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -330,7 +334,7 @@ class OctimerWindow(Gtk.Window):
         self.chip = Gtk.Label(label="TIMER")
         self.chip.get_style_context().add_class("chip")
         self.chip.set_valign(Gtk.Align.CENTER)
-        close = Gtk.Button(label="\u2715")
+        close = self.close_btn = Gtk.Button(label="\u2715")
         close.get_style_context().add_class("flat")
         close.set_relief(Gtk.ReliefStyle.NONE)
         close.set_focus_on_click(False)
@@ -469,7 +473,39 @@ class OctimerWindow(Gtk.Window):
         return False
 
     # -------------------------------------------------------------- handlers
+    def _over_control(self, x_root: int, y_root: int) -> bool:
+        """True if the screen point sits on a control we must not steal clicks from."""
+        for widget in (
+            self.close_btn,
+            self.arm_btn,
+            self.cancel_btn,
+            self.action_btn,
+            self.chk_drain,
+            self.btn_timer,
+            self.btn_watch,
+            *self.trim_row.get_children(),
+            *self.preset_row.get_children(),
+        ):
+            if not widget.get_visible() or not widget.get_mapped():
+                continue
+            res = widget.translate_coordinates(self, 0, 0)
+            if len(res) == 3:
+                ok, wx, wy = res
+            else:
+                wx, wy = res
+                ok = wx is not None
+            if not ok:
+                continue
+            if (
+                wx <= x_root <= wx + widget.get_allocated_width()
+                and wy <= y_root <= wy + widget.get_allocated_height()
+            ):
+                return True
+        return False
+
     def _on_press(self, _w, event) -> bool:
+        if event.button == 1 and self._over_control(event.x, event.y):
+            return False
         if event.button == 1:
             self.begin_move_drag(
                 event.button, int(event.x_root), int(event.y_root), event.time
@@ -542,7 +578,7 @@ class OctimerWindow(Gtk.Window):
     def _bump(self, seconds: float) -> None:
         self._set_minutes(self.engine.settings.minutes + seconds / 60.0)
 
-    def _on_arm(self) -> None:
+    def _on_arm(self, *_a) -> None:
         if self.engine.state.armed:
             return
         self.engine.arm(time.monotonic())
@@ -563,6 +599,8 @@ class OctimerWindow(Gtk.Window):
         self._save_state()
 
     def _quit(self) -> None:
+        if self._quitting:
+            return
         self._save_state()
         self._quitting = True
         Gtk.main_quit()
@@ -601,6 +639,8 @@ class OctimerWindow(Gtk.Window):
 
     def _apply_snapshot(self, snap) -> bool:
         self._pending_poll = False
+        if self._quitting:
+            return False
         if snap is not None:
             self.engine.set_activity(snap.busy, snap.ids, time.monotonic())
             self._snap_detail = snap.detail
@@ -628,6 +668,8 @@ class OctimerWindow(Gtk.Window):
 
     # --------------------------------------------------------------- render
     def _render(self) -> None:
+        if self._quitting:
+            return
         st = self.engine.state
         s = self.engine.settings
         armed = st.armed
@@ -711,12 +753,14 @@ class OctimerWindow(Gtk.Window):
             elif st.wait_left is not None and not st.note.startswith("waiting"):
                 text = f"nothing running \u00b7 fires in {st.wait_left:.0f}s unless work starts"
             else:
-                text = f"opencode idle {st.idle_for:.0f}s \u00b7 off in {st.wait_left:.0f}s"
+                left = st.wait_left if st.wait_left is not None else s.idle_grace
+                text = f"opencode idle {st.idle_for:.0f}s \u00b7 off in {left:.0f}s"
         elif st.phase == DRAIN:
             if active:
                 text = f"{active} session(s) still working \u00b7 shuts down when idle"
             else:
-                text = f"opencode idle {st.idle_for:.0f}s \u00b7 {st.wait_left:.0f}s to shutdown"
+                left = st.wait_left if st.wait_left is not None else s.idle_grace
+                text = f"opencode idle {st.idle_for:.0f}s \u00b7 {left:.0f}s to shutdown"
         elif st.phase == FIRE:
             text = f"{power.label(s.action)} in {int(round(st.remaining))}s \u00b7 cancel to stop"
         else:

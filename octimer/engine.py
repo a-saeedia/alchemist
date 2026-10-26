@@ -105,6 +105,9 @@ class Engine:
         if self.settings.mode == MODE_WATCH:
             st.phase = WATCH
             st.note = "waiting for opencode work" if not self.busy else "opencode busy"
+            # Never leave wait_left unset: the UI renders straight after arming,
+            # before the first tick has had a chance to compute it.
+            st.wait_left = self.settings.arm_grace if not self.busy else None
             self.deadline = None
         else:
             st.phase = TIMER
@@ -209,6 +212,8 @@ class Engine:
         self.state.remaining = 0.0
         self.state.note = note
         self.state.fire_at = None
+        self.state.wait_left = self.settings.idle_grace
+        self.state.idle_for = 0.0
         self.idle_since = None
         self._note(note)
 
