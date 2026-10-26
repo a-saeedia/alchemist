@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# oc-timer launcher.
+#
+# Wayland (COSMIC) has no client-side always-on-top protocol, so the widget runs
+# on the X11 backend via XWayland: that gives set_keep_above() + begin_move_drag()
+# the behaviour everyone expects from a floating timer.
+set -euo pipefail
+src="${BASH_SOURCE[0]}"
+here="$(cd "$(dirname "$(readlink -f "$src")")" && pwd)"
+if [ -n "${DISPLAY:-}" ] && [ "${OCTIMER_KEEP_BACKEND:-0}" != "1" ]; then
+  export GDK_BACKEND=x11
+fi
+export PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m octimer "$@"

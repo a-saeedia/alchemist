@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=oc-timer
+GenericName=Shutdown Timer
+Comment=Draggable countdown that powers off when it ends or when every opencode session finishes
+Exec=@EXEC@
+Icon=@ICON@
+Terminal=false
+Categories=Utility;
+Keywords=timer;shutdown;countdown;power;opencode;
+StartupWMClass=octimer
+StartupNotify=false
