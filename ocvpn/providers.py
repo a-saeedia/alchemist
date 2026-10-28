@@ -207,3 +207,29 @@ def summary() -> dict:
         "free_installed": sum(1 for p in inst if p.free),
         "names": [p.name for p in inst],
     }
+
+
+import glob as _glob
+import os as _os
+
+
+def _config_dirs():
+    home = _os.path.expanduser("~")
+    return [
+        _os.path.join(home, "Documents", "openvpn"),
+        _os.path.join(home, "Documents", "ovpn", "vpnbook"),
+        _os.path.join(home, "Documents", "ovpn"),
+        _os.path.join(home, "Documents"),
+        _os.path.join(home, "openvpn"),
+    ]
+
+
+def discover_ovpn_configs() -> list[str]:
+    """All .ovpn files under the common config folders (deduped, sorted)."""
+    found: set[str] = set()
+    for d in _config_dirs():
+        if not _os.path.isdir(d):
+            continue
+        for path in _glob.glob(_os.path.join(d, "**", "*.ovpn"), recursive=True):
+            found.add(path)
+    return sorted(found)

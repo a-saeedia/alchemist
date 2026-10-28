@@ -8,6 +8,8 @@ room for a provider grid, profile list and connection details. Launched with
 from __future__ import annotations
 
 import os
+import subprocess
+
 import threading
 import time
 
@@ -142,7 +144,57 @@ class DashboardWindow(Gtk.Window):
 
         self._refresh_providers()
         self._refresh_profiles()
+        self._refresh_configs()
         self._poll()
+
+    def _refresh_configs(self):
+        if not hasattr(self, "cfg_list"):
+            cfg_frame = Gtk.Frame()
+            cfg_frame.get_style_context().add_class("card")
+            cfg_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            cfg_frame.add(cfg_box)
+            cr = Gtk.Label(label="OPENVPN CONFIG FILES (.ovpn)")
+            cr.get_style_context().add_class("card-title")
+            cr.set_xalign(0)
+            cfg_box.pack_start(cr, False, False, 0)
+            scrolled = Gtk.ScrolledWindow()
+            scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            self.cfg_list = Gtk.ListBox()
+            scrolled.add(self.cfg_list)
+            cfg_box.pack_start(scrolled, True, True, 0)
+            # insert before root? append to root instead; reorder by packing now
+            self.get_children()[0].pack_start(cfg_frame, True, True, 0)
+        for c in self.cfg_list.get_children():
+            self.cfg_list.remove(c)
+        for path in providers.discover_ovpn_configs():
+            row = Gtk.ListBoxRow()
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            box.set_margin_start(4); box.set_margin_end(4); box.set_margin_top(2); box.set_margin_bottom(2)
+            lbl = Gtk.Label(label=os.path.basename(path))
+            lbl.set_xalign(0)
+            box.pack_start(lbl, True, True, 0)
+            btn = Gtk.Button(label="Connect")
+            btn.connect("clicked", lambda _w, p=path: self._connect_config(p))
+            box.pack_end(btn, False, False, 0)
+            row.add(box)
+            self.cfg_list.add(row)
+        self.cfg_list.show_all()
+
+    def _connect_config(self, path):
+        import shutil
+        cred = os.path.expanduser("~/cred.txt")
+        src = os.path.expanduser("~/.ovpn_creds.txt")
+        if os.path.exists(src) and not os.path.exists(cred):
+            try:
+                shutil.copyfile(src, cred)
+            except OSError:
+                pass
+        def worker():
+            subprocess.run(["pkexec", "/usr/local/bin/ovpn-engine", "start", path],
+                           capture_output=True, text=True, timeout=60)
+            GLib.idle_add(self._poll, True)
+        threading.Thread(target=worker, daemon=True).start()
+
 
         self.connect("destroy", lambda *_: Gtk.main_quit())
 

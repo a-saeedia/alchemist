@@ -69,6 +69,24 @@ class AlchemistTray:
         prov_menu.show_all()
         self.menu.append(pitem)
 
+        # configs submenu
+        cfg_menu = Gtk.Menu()
+        citem = Gtk.MenuItem(label="Configs")
+        citem.set_submenu(cfg_menu)
+        configs = providers.discover_ovpn_configs()
+        if not configs:
+            mi = Gtk.MenuItem(label="(no .ovpn files found)")
+            mi.set_sensitive(False)
+            cfg_menu.append(mi)
+        else:
+            for path in configs:
+                name = os.path.basename(path)
+                mi = Gtk.MenuItem(label=name)
+                mi.connect("activate", lambda _w, p=path: self._connect_config(p))
+                cfg_menu.append(mi)
+        cfg_menu.show_all()
+        self.menu.append(citem)
+
         self.menu.append(Gtk.SeparatorMenuItem())
         qi = Gtk.MenuItem(label="Quit")
         qi.connect("activate", lambda *_: Gtk.main_quit())
@@ -102,6 +120,21 @@ class AlchemistTray:
         st = nm.status()
         cands = nm.rotate_candidates(names, st.name or "", [])
         threading.Thread(target=lambda: nm.rotate(cands, st.name or ""), daemon=True).start()
+
+    def _connect_config(self, path: str):
+        import shutil
+        # ensure cred file exists for engine
+        cred = os.path.expanduser("~/cred.txt")
+        src = os.path.expanduser("~/.ovpn_creds.txt")
+        if os.path.exists(src) and not os.path.exists(cred):
+            try:
+                shutil.copyfile(src, cred)
+            except OSError:
+                pass
+        def worker():
+            subprocess.run(["pkexec", "/usr/local/bin/ovpn-engine", "start", path],
+                           capture_output=True, text=True, timeout=60)
+        threading.Thread(target=worker, daemon=True).start()
 
     def _poll(self):
         def work():
