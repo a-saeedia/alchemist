@@ -54,6 +54,11 @@ class AlchemistTray:
             mi.connect("activate", lambda *_ , f=cb: f())
             self.menu.append(mi)
 
+        ci = Gtk.MenuItem(label="Set credentials\u2026")
+        ci.connect("activate", lambda *_: subprocess.Popen(["/home/arman/.local/bin/openvpn-connect-gui.py"],
+                                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        self.menu.append(ci)
+
         self.menu.append(Gtk.SeparatorMenuItem())
         dash = Gtk.MenuItem(label="Open Dashboard")
         dash.connect("activate", lambda *_: self._open_dashboard())
