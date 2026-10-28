@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=oc-vpn
+GenericName=VPN Switch
+Comment=Whole-device OpenVPN with a corner button that switches to the next exit IP
+Exec=@EXEC@
+Icon=@ICON@
+Terminal=false
+Categories=Network;
+Keywords=vpn;openvpn;network;ip;tunnel;
+StartupWMClass=ocvpn
+StartupNotify=false

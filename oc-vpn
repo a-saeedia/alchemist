@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+src="/home/arman/Documents/oc pj/sys admiin/oc-vpn"
+export GDK_BACKEND=x11
+export PYTHONPATH="/home/arman/Documents/oc pj/sys admiin${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m ocvpn --tray "$@"

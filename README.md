@@ -148,3 +148,175 @@ Two notes for future edits:
   priority that beats application rules, so the progress rail is two plain boxes
   (`.rail` / `.railfill`) instead. Same reason the clock is a `Gtk.Label` with a
   `min-height`-free CSS size: 38 px+ Fira Mono clipped its ascenders.
+
+---
+
+# oc-vpn
+
+The other half of the suite: OpenVPN on the whole device (every app, Chrome and
+all, because the tunnel is the default route — not a browser proxy), plus a
+corner switch that changes the exit IP in one click.
+
+```
+┌──────────────────────────────────┐
+│ ● OC-VPN              [ ON ] – ✕ │
+│ USA-Google-UDP                   │
+│ 162.217.248.178       [⏻] [NEW IP]│
+│ tun0 · 15 servers                │
+└──────────────────────────────────┘
+```
+
+## Install
+
+```bash
+./install-vpn.sh              # ~/.local/bin/oc-vpn + application menu entry
+./install-vpn.sh --autostart  # also start the card at login
+./install-vpn.sh --uninstall
+```
+
+Nothing here needs root. NetworkManager already owns the tunnel and its polkit
+rules let the logged-in user toggle their own VPN, so there is no sudoers rule,
+no stored root password and no `sudo` in either the widget or the CLI.
+
+## Save the login once
+
+The profiles authenticate with `auth-user-pass`, so each one needs the account.
+Do this once and every profile keeps working:
+
+```bash
+oc-vpn --save-login
+```
+
+The dialog (or terminal prompt) asks for user and password, then writes them
+into **all** VPN profiles with `password-flags=0` and lets NetworkManager store
+the secret itself. `nmcli con up <name>` then connects with no prompt at all.
+Details:
+
+* The secret lives in NetworkManager's own store — a 0600, root-owned keyfile
+  under `/etc/NetworkManager/system-connections/`. It is never written to a
+  plaintext file next to the app and never into `state.json`.
+* `+vpn.data` merges instead of replacing, so `remote`, `cipher`, `ta` and
+  `remote-random` survive the edit (there is a test for exactly that).
+* Passwords containing `,` or `\` are escaped for nmcli's dictionary syntax.
+* `oc-vpn --list` marks every profile `login` or `no-login`, so you can see what
+  still needs the account.
+
+## The corner button
+
+`oc-vpn` floats bottom-right, above other windows, and remembers where you drag
+it (`~/.config/ocvpn/state.json`).
+
+| control | what it does |
+| --- | --- |
+| card body | drag to move |
+| `⏻` | connect the last-used profile / disconnect |
+| `NEW IP` | disconnect, connect the next server, refresh the IP readout |
+| `–` | collapse to the header bar (the compact pill) |
+| `✕` / `Esc` | quit |
+| right-click | profiles menu, save login, new IP, adopt, reset position, quit |
+
+`–` is a collapse rather than `iconify()` on purpose: the card is an
+override-redirect X11 window with no taskbar entry, so a real minimise would
+hide it somewhere you cannot click it back. Collapsing keeps the bottom edge
+planted and leaves the state chip visible; `▴` expands it again.
+
+The readout line shows the live egress IP — the address the VPN exit presents to
+the internet, so a rotation is visible immediately, not just after a reconnect.
+The chip is the state: `ON` (cyan), `OFF` (grey), `EXTERNAL` (amber, an openvpn
+you started by hand), `WORKING` while a switch is in flight.
+
+### What `NEW IP` will and will not try
+
+Rotation is round-robin past the current server with three filters:
+
+* never the server already connected;
+* skip profiles with no `tls-auth` (`ta`) key — broken imports that can never
+  handshake, and they would otherwise eat a 20 s timeout each;
+* one candidate per remote host, so provider duplicates don't repeat.
+
+Servers that have handshook before are tried first (a small MRU list in
+`state.json`), and if every candidate fails the previous profile is brought back
+up before the card reports the error. It never leaves the device on the raw
+uplink by accident.
+
+## CLI
+
+```bash
+oc-vpn --status          # up/down + exit IP, exit code 0 when tunneled
+oc-vpn --status --json
+oc-vpn --list            # profiles + login state
+oc-vpn --up USA-UDP      # connect one
+oc-vpn --down
+oc-vpn --rotate          # next server, prints the new exit IP
+oc-vpn --adopt           # stop a hand-started openvpn, take over via NetworkManager
+```
+
+`oc-vpn --rotate` is the scriptable form of the button:
+
+```bash
+oc-vpn --rotate && oc-vpn --status
+```
+
+## Why the card is an X11 POPUP
+
+COSMIC's XWayland ignores `move()` on WM-managed windows, so an ordinary
+toplevel always opens wherever the compositor decides — the bottom-right corner
+would just be a wish. A `Gtk.WindowType.POPUP` toplevel is override-redirect:
+the compositor leaves it alone, `move()` lands exactly where asked, and it stacks
+above managed windows. The card position is verified against the X server
+(`xwininfo` reports `272x117+1620+891` on a 1920x1080 screen, i.e. 28 px from the
+right edge and 72 px above the panel).
+
+The two consequences are handled in `ui.py`: dragging is implemented by hand
+(press → motion → move → release saves), and `–` collapses instead of iconifying
+because there is no taskbar entry to restore an iconified override-redirect
+window from.
+
+## Adopting a hand-started tunnel
+`sudo openvpn --config X.ovpn --redirect-gateway def1` works, but NetworkManager
+cannot see it, so it cannot be rotated, restored after sleep, or stopped without
+`sudo`. The card detects that case and shows `EXTERNAL`; press `⏻` and it runs
+`pkexec pkill -f "openvpn --config"` (a normal desktop password dialog, once)
+then brings the profile up under NetworkManager.
+
+The managed path is also the one that survives reboots: with a login saved, the
+profile reconnects by itself at login and `NEW IP` keeps working.
+
+## Layout
+
+```
+oc-vpn                     launcher (forces the X11 backend via XWayland)
+ocvpn/
+  __main__.py              CLI: status/list/up/down/rotate/save-login/adopt
+  nm.py                    nmcli backend: profiles, status, rotate, egress IP
+  creds.py                 one-time login capture, GTK dialog + terminal fallback
+  ui.py                    GTK3 card: corner placement, chip states, async actions
+tests/test_vpn.py          parsing, rotation order, status shapes (no nmcli)
+```
+
+## Not in here
+
+The button changes the **VPN exit IP**. It does not reset, wipe or reroute any
+local application state, and there is no code here that clears another app's
+database or tries to defeat a service's usage limits. Rotating an exit gives you
+a different network vantage point; it does not change what a service counts
+against your account, and a client-side reset usually just loses your sessions.
+
+---
+
+# VPN Platform (dashboard + providers)
+
+The corner card now ships with a full dashboard and a provider catalogue:
+
+```bash
+oc-vpn --dashboard        # full window: connection, profiles, provider grid
+oc-vpn --providers        # list known VPN backends and install state
+oc-vpn --launch nym       # launch a provider by id
+oc-vpn --provider-status protonvpn
+```
+
+Right-click the card → "Open dashboard" / "Providers" for the same.
+
+Free backends detected when installed: OpenVPN/WireGuard (NM), Proton VPN,
+Cloudflare WARP, Riseup, NymVPN, eOVPN, Trayscale, Outline, Tor, I2P, Mullvad
+Browser. Install the missing system ones with `sudo ./install-free-vpns.sh`.
