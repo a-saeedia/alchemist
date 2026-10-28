@@ -1,3 +1,9 @@
+# Alchemist — Free VPN Platform
+
+System-tray VPN platform (GTK3/X11) for Pop!_OS/COSMIC: OpenVPN/WireGuard via NetworkManager, free provider catalogue, IP rotation, full dashboard.
+
+Repo: https://github.com/a-saeedia/alchemist
+
 # oc-timer
 
 A small floating desktop widget: drag it anywhere, set a countdown, and the
